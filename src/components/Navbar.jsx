@@ -20,7 +20,6 @@ const Navbar = () => {
     }, []);
 
     const handleLogout = () => {
-        localStorage.removeItem('medicompare_token');
         localStorage.removeItem('medicompare_user');
         setUser(null);
     };

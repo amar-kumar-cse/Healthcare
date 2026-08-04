@@ -6,6 +6,13 @@ const { protect, admin } = require('../middleware/authMiddleware');
 const User = require('../models/User.model');
 const Hospital = require('../models/Hospital.model');
 
+const buildInMemoryFileRecord = (file) => ({
+    filename: `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`,
+    path: `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+    size: file.size,
+    mimeType: file.mimetype
+});
+
 // @route   POST /api/upload/hospital-logo
 // @desc    Upload hospital logo
 // @access  Private/Admin
@@ -18,15 +25,16 @@ router.post('/hospital-logo', protect, admin, upload.single('logo'), async (req,
             });
         }
 
-        const fileUrl = `/uploads/logos/${req.file.filename}`;
+        const fileRecord = buildInMemoryFileRecord(req.file);
 
         res.json({
             success: true,
             message: 'Hospital logo uploaded successfully',
             data: {
-                filename: req.file.filename,
-                path: fileUrl,
-                size: req.file.size
+                filename: fileRecord.filename,
+                path: fileRecord.path,
+                size: fileRecord.size,
+                mimeType: fileRecord.mimeType
             }
         });
     } catch (error) {
@@ -50,15 +58,16 @@ router.post('/hospital-image', protect, admin, upload.single('hospitalImage'), a
             });
         }
 
-        const fileUrl = `/uploads/hospital-images/${req.file.filename}`;
+        const fileRecord = buildInMemoryFileRecord(req.file);
 
         res.json({
             success: true,
             message: 'Hospital image uploaded successfully',
             data: {
-                filename: req.file.filename,
-                path: fileUrl,
-                size: req.file.size
+                filename: fileRecord.filename,
+                path: fileRecord.path,
+                size: fileRecord.size,
+                mimeType: fileRecord.mimeType
             }
         });
     } catch (error) {
@@ -82,18 +91,19 @@ router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
             });
         }
 
-        const fileUrl = `/uploads/avatars/${req.file.filename}`;
+        const fileRecord = buildInMemoryFileRecord(req.file);
 
-        // Update user avatar in database
-        await User.findByIdAndUpdate(req.user._id, { avatar: fileUrl });
+        // Update user avatar in database with an in-memory data URL so files persist with MongoDB
+        await User.findByIdAndUpdate(req.user._id, { avatar: fileRecord.path });
 
         res.json({
             success: true,
             message: 'Avatar uploaded successfully',
             data: {
-                filename: req.file.filename,
-                path: fileUrl,
-                size: req.file.size
+                filename: fileRecord.filename,
+                path: fileRecord.path,
+                size: fileRecord.size,
+                mimeType: fileRecord.mimeType
             }
         });
     } catch (error) {
@@ -117,21 +127,22 @@ router.post('/medical-report', protect, upload.single('medicalReport'), async (r
             });
         }
 
-        const fileUrl = `/uploads/medical-reports/${req.file.filename}`;
+        const fileRecord = buildInMemoryFileRecord(req.file);
 
-        // Add to user's medical reports array
+        // Add to user's medical reports array as a durable data URL stored in MongoDB
         await User.findByIdAndUpdate(
             req.user._id,
-            { $push: { medicalReports: fileUrl } }
+            { $push: { medicalReports: fileRecord.path } }
         );
 
         res.json({
             success: true,
             message: 'Medical report uploaded successfully',
             data: {
-                filename: req.file.filename,
-                path: fileUrl,
-                size: req.file.size
+                filename: fileRecord.filename,
+                path: fileRecord.path,
+                size: fileRecord.size,
+                mimeType: fileRecord.mimeType
             }
         });
     } catch (error) {
@@ -155,11 +166,7 @@ router.post('/multiple', protect, admin, upload.array('images', 5), async (req, 
             });
         }
 
-        const fileUrls = req.files.map(file => ({
-            filename: file.filename,
-            path: `/uploads/${file.filename}`,
-            size: file.size
-        }));
+        const fileUrls = req.files.map(file => buildInMemoryFileRecord(file));
 
         res.json({
             success: true,

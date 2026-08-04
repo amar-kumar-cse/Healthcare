@@ -14,17 +14,45 @@ connectDB();
 
 const app = express();
 
+const allowedOrigins = new Set(
+    [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean)
+);
+
+const authAttempts = new Map();
+
+const authLimiter = (req, res, next) => {
+    const key = req.ip || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000;
+    const limit = 10;
+    const attempts = authAttempts.get(key) || [];
+    const recentAttempts = attempts.filter((timestamp) => now - timestamp < windowMs);
+
+    if (recentAttempts.length >= limit) {
+        return res.status(429).json({
+            success: false,
+            message: 'Too many authentication attempts. Please try again later.'
+        });
+    }
+
+    recentAttempts.push(now);
+    authAttempts.set(key, recentAttempts);
+    next();
+};
+
 // Enable CORS for frontend dev origins
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests) or any localhost
-        if (!origin || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+        if (!origin || allowedOrigins.has(origin)) {
             return callback(null, true);
         }
-        callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
     },
     credentials: true
 }));
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -90,7 +118,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`\n🚀 Server is running on port ${PORT}`);
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🌐 Dynamic CORS enabled for local dev`);
+    console.log(`🌐 Restricted CORS enabled for approved origins`);
 });
 
 module.exports = app;

@@ -3,6 +3,8 @@ import { MapPin, Star, ShieldCheck, Loader, Search, ArrowUpDown, Filter } from '
 import HospitalModal from './HospitalModal';
 import '../App.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 // High quality fallback dataset if backend API is not running
 const MOCK_HOSPITALS = [
     {
@@ -91,7 +93,7 @@ const HospitalList = ({ searchQuery = '' }) => {
     useEffect(() => {
         const fetchHospitals = async () => {
             try {
-                const response = await fetch('http://localhost:5000/api/hospitals');
+                const response = await fetch(`${API_BASE_URL}/api/hospitals`);
                 if (!response.ok) throw new Error('API offline');
                 const data = await response.json();
                 if (data.data && data.data.length > 0) {

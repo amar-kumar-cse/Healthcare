@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Lock, Mail, User, ShieldCheck } from 'lucide-react';
 import '../App.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({
@@ -32,17 +34,17 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
             : { name: formData.name, email: formData.email, password: formData.password };
 
         try {
-            const res = await fetch(`http://localhost:5000${endpoint}`, {
+            const res = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                credentials: 'include'
             });
 
             const data = await res.json();
 
             if (res.ok && data.success) {
                 const userData = data.data;
-                localStorage.setItem('medicompare_token', userData.token);
                 localStorage.setItem('medicompare_user', JSON.stringify(userData));
                 setSuccessMsg(isLogin ? 'Successfully logged in!' : 'Account created successfully!');
                 setTimeout(() => {
@@ -53,22 +55,8 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
                 setError(data.message || (data.errors && data.errors[0]?.msg) || 'Authentication failed');
             }
         } catch (err) {
-            console.warn('Backend unavailable, using demo authentication mode:', err);
-            // Fallback for demo mode if backend is not running
-            const mockUser = {
-                _id: 'demo-123',
-                name: formData.name || 'Demo Patient',
-                email: formData.email,
-                role: 'user',
-                token: 'mock-jwt-token-medicompare'
-            };
-            localStorage.setItem('medicompare_token', mockUser.token);
-            localStorage.setItem('medicompare_user', JSON.stringify(mockUser));
-            setSuccessMsg('Logged in (Demo Mode)');
-            setTimeout(() => {
-                onAuthSuccess(mockUser);
-                onClose();
-            }, 800);
+            console.warn('Authentication request failed:', err);
+            setError('Unable to reach authentication server. Please try again.');
         } finally {
             setLoading(false);
         }

@@ -5,6 +5,21 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User.model');
 const { protect } = require('../middleware/authMiddleware');
 
+const cookieOptions = {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 30 * 24 * 60 * 60 * 1000
+};
+
+const buildSafeUser = (user) => ({
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    avatar: user.avatar
+});
+
 // Generate JWT Token
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -48,15 +63,12 @@ router.post('/register', [
             password
         });
 
+        const token = generateToken(user._id);
+        res.cookie('medicompare_token', token, cookieOptions);
+
         res.status(201).json({
             success: true,
-            data: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                token: generateToken(user._id)
-            }
+            data: buildSafeUser(user)
         });
     } catch (error) {
         res.status(500).json({
@@ -105,16 +117,12 @@ router.post('/login', [
             });
         }
 
+        const token = generateToken(user._id);
+        res.cookie('medicompare_token', token, cookieOptions);
+
         res.json({
             success: true,
-            data: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                avatar: user.avatar,
-                token: generateToken(user._id)
-            }
+            data: buildSafeUser(user)
         });
     } catch (error) {
         res.status(500).json({
@@ -154,29 +162,27 @@ router.put('/profile', protect, async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
 
-        if (user) {
-            user.name = req.body.name || user.name;
-            user.email = req.body.email || user.email;
-            user.phone = req.body.phone || user.phone;
-
-            if (req.body.password) {
-                user.password = req.body.password;
-            }
-
-            const updatedUser = await user.save();
-
-            res.json({
-                success: true,
-                data: {
-                    _id: updatedUser._id,
-                    name: updatedUser.name,
-                    email: updatedUser.email,
-                    role: updatedUser.role,
-                    avatar: updatedUser.avatar,
-                    token: generateToken(updatedUser._id)
-                }
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
             });
         }
+
+        user.name = req.body.name || user.name;
+        user.email = req.body.email || user.email;
+        user.phone = req.body.phone || user.phone;
+
+        if (req.body.password) {
+            user.password = req.body.password;
+        }
+
+        const updatedUser = await user.save();
+
+        res.json({
+            success: true,
+            data: buildSafeUser(updatedUser)
+        });
     } catch (error) {
         res.status(500).json({
             success: false,
