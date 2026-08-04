@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, User, ShieldCheck } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 import '../App.css';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
     const [isLogin, setIsLogin] = useState(true);

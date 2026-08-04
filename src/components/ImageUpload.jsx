@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, X, FileText, CheckCircle, AlertCircle, Sparkles, ArrowRight, ShieldCheck, DollarSign } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 import '../App.css';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const ImageUpload = ({ onFindHospital }) => {
     const [file, setFile] = useState(null);

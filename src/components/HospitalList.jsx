@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Star, ShieldCheck, Loader, Search, ArrowUpDown, Filter } from 'lucide-react';
 import HospitalModal from './HospitalModal';
+import { API_BASE_URL } from '../config';
 import '../App.css';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // High quality fallback dataset if backend API is not running
 const MOCK_HOSPITALS = [

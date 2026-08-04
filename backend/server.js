@@ -14,45 +14,26 @@ connectDB();
 
 const app = express();
 
-const allowedOrigins = new Set(
-    [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'].filter(Boolean)
-);
-
-const authAttempts = new Map();
-
-const authLimiter = (req, res, next) => {
-    const key = req.ip || req.connection?.remoteAddress || 'unknown';
-    const now = Date.now();
-    const windowMs = 15 * 60 * 1000;
-    const limit = 10;
-    const attempts = authAttempts.get(key) || [];
-    const recentAttempts = attempts.filter((timestamp) => now - timestamp < windowMs);
-
-    if (recentAttempts.length >= limit) {
-        return res.status(429).json({
-            success: false,
-            message: 'Too many authentication attempts. Please try again later.'
-        });
-    }
-
-    recentAttempts.push(now);
-    authAttempts.set(key, recentAttempts);
-    next();
-};
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 // Enable CORS for frontend dev origins
 app.use(cors({
     origin: function (origin, callback) {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (
+            !origin ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1') ||
+            allowedOrigins.includes(origin)
+        ) {
             return callback(null, true);
         }
         return callback(new Error('Not allowed by CORS'));
     },
     credentials: true
 }));
-
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

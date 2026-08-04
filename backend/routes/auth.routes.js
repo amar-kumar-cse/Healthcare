@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const User = require('../models/User.model');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,6 +21,15 @@ const buildSafeUser = (user) => ({
     avatar: user.avatar
 });
 
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: {
+        success: false,
+        message: 'Too many attempts, try again later'
+    }
+});
+
 // Generate JWT Token
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -30,7 +40,7 @@ const generateToken = (id) => {
 // @route   POST /api/auth/register
 // @desc    Register new user
 // @access  Public
-router.post('/register', [
+router.post('/register', authLimiter, [
     body('name').notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
@@ -82,7 +92,7 @@ router.post('/register', [
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token
 // @access  Public
-router.post('/login', [
+router.post('/login', authLimiter, [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
