@@ -68,34 +68,9 @@ const ImageUpload = ({ onFindHospital }) => {
                 throw new Error(data.message || 'Upload failed');
             }
 
-            setUploadStatus('scanning');
-            setMessage('Extracting report details from the uploaded file...');
-
-            const detectedProcedure = file.name.toLowerCase().includes('mri')
-                ? 'MRI Lumbar Spine / Brain Scan'
-                : file.name.toLowerCase().includes('xray') || file.name.toLowerCase().includes('x-ray')
-                    ? 'X-Ray Chest'
-                    : file.name.toLowerCase().includes('ct')
-                        ? 'CT Scan'
-                        : 'Medical Report Review';
-
-            const basePrice = file.type.includes('pdf') ? 180 : 220;
-            const lowestPrice = Math.max(90, basePrice - 110);
-
-            setTimeout(() => {
-                setUploadStatus('success');
-                setMessage('Report Processed Successfully!');
-                setAiResult({
-                    detectedProcedure,
-                    category: 'Imaging',
-                    averageMarketPrice: basePrice,
-                    lowestAvailablePrice: lowestPrice,
-                    potentialSavings: basePrice - lowestPrice,
-                    recommendedHospital: 'CyberMed General Hospital',
-                    confidence: '96.2%',
-                    uploadedFile: data.data
-                });
-            }, 1600);
+            setUploadStatus('success');
+            setMessage('Report Analyzed Successfully!');
+            setAiResult(data.data.analysis);
         } catch (err) {
             console.warn('Upload failed:', err);
             setUploadStatus('error');
@@ -107,7 +82,7 @@ const ImageUpload = ({ onFindHospital }) => {
         <section id="upload" style={{ padding: '4rem 8%', maxWidth: '900px', margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                 <span className="badge badge-category" style={{ marginBottom: '0.8rem' }}>
-                    <Sparkles size={14} /> AI Vision Medical Analyzer
+                    <Sparkles size={14} /> Report Analysis
                 </span>
                 <h2 style={{
                     fontSize: '2.4rem',
@@ -117,7 +92,7 @@ const ImageUpload = ({ onFindHospital }) => {
                     Upload Prescription or Medical Bill
                 </h2>
                 <p style={{ color: '#aaa', fontSize: '1rem', maxWidth: '600px', margin: '0 auto' }}>
-                    Our AI automatically extracts procedure codes and finds the lowest verified prices across partner hospitals.
+                    We extract file-specific signals from the uploaded report and match likely procedures across partner hospitals.
                 </p>
             </div>
 
@@ -264,7 +239,7 @@ const ImageUpload = ({ onFindHospital }) => {
                     border: '1px solid var(--accent-color)',
                     background: 'rgba(0, 255, 136, 0.03)'
                 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', gap: '1rem', flexWrap: 'wrap' }}>
                         <div>
                             <span className="badge badge-verified" style={{ marginBottom: '4px' }}>
                                 Confidence: {aiResult.confidence}
@@ -272,6 +247,9 @@ const ImageUpload = ({ onFindHospital }) => {
                             <h3 style={{ fontSize: '1.4rem', margin: '4px 0 0 0', color: '#fff' }}>
                                 Detected: {aiResult.detectedProcedure}
                             </h3>
+                            <div style={{ marginTop: '6px', color: '#8f9bb3', fontSize: '0.85rem' }}>
+                                Signals: {Array.isArray(aiResult.signals) ? aiResult.signals.join(', ') : 'n/a'}
+                            </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <span style={{ fontSize: '0.85rem', color: '#aaa' }}>Potential Savings</span>
@@ -312,7 +290,7 @@ const ImageUpload = ({ onFindHospital }) => {
 
                     <button
                         onClick={() => {
-                            if (onFindHospital) onFindHospital('MRI Scan');
+                            if (onFindHospital) onFindHospital(aiResult.detectedProcedure || 'Medical Report');
                             const hospitalElem = document.getElementById('hospitals');
                             if (hospitalElem) hospitalElem.scrollIntoView({ behavior: 'smooth' });
                         }}

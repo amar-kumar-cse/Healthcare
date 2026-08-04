@@ -8,6 +8,7 @@ const connectDB = require('./config/db');
 const hospitalRoutes = require('./routes/hospitals.routes');
 const authRoutes = require('./routes/auth.routes');
 const uploadRoutes = require('./routes/upload.routes');
+const bookingRoutes = require('./routes/bookings.routes');
 
 // Connect to MongoDB (non-blocking for dev flexibility)
 connectDB();
@@ -45,6 +46,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

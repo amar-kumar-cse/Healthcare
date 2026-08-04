@@ -1,22 +1,65 @@
 import React, { useState } from 'react';
 import { X, MapPin, Star, ShieldCheck, Phone, Mail, Globe, Calendar, CheckCircle2, DollarSign } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 import '../App.css';
 
 const HospitalModal = ({ hospital, onClose }) => {
     const [bookingService, setBookingService] = useState(null);
-    const [bookingSubmitted, setBookingSubmitted] = useState(false);
     const [bookingDate, setBookingDate] = useState('');
-    const [patientName, setPatientName] = useState('');
+    const [patientName, setPatientName] = useState(() => {
+        try {
+            const savedUser = localStorage.getItem('medicompare_user');
+            return savedUser ? (JSON.parse(savedUser).name || '') : '';
+        } catch (error) {
+            return '';
+        }
+    });
+    const [bookingLoading, setBookingLoading] = useState(false);
+    const [bookingError, setBookingError] = useState('');
+    const [bookingResult, setBookingResult] = useState(null);
 
     if (!hospital) return null;
 
-    const handleBooking = (e) => {
+    const handleBooking = async (e) => {
         e.preventDefault();
-        setBookingSubmitted(true);
-        setTimeout(() => {
-            setBookingSubmitted(false);
-            setBookingService(null);
-        }, 3000);
+        if (!bookingService) return;
+
+        setBookingLoading(true);
+        setBookingError('');
+        setBookingResult(null);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/bookings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    hospitalId: hospital._id,
+                    serviceName: bookingService.name,
+                    servicePrice: bookingService.price,
+                    patientName,
+                    preferredDate: bookingDate,
+                    notes: `Booked from ${hospital.name} card`
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Booking request failed');
+            }
+
+            setBookingResult(data.data);
+            setTimeout(() => {
+                setBookingService(null);
+                setBookingResult(null);
+                setBookingDate('');
+            }, 3500);
+        } catch (error) {
+            setBookingError(error.message || 'Booking request failed');
+        } finally {
+            setBookingLoading(false);
+        }
     };
 
     return (
@@ -191,9 +234,15 @@ const HospitalModal = ({ hospital, onClose }) => {
                             <Calendar size={18} /> Book Appointment: {bookingService.name} (${bookingService.price})
                         </h4>
 
-                        {bookingSubmitted ? (
+                        {bookingError && (
+                            <div style={{ color: '#ff6b6b', marginBottom: '0.8rem', fontSize: '0.9rem' }}>
+                                {bookingError}
+                            </div>
+                        )}
+
+                        {bookingResult ? (
                             <div style={{ color: '#00ff88', display: 'flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0' }}>
-                                <CheckCircle2 size={20} /> Appointment request submitted! The hospital desk will confirm shortly.
+                                <CheckCircle2 size={20} /> Booking request submitted. Ref: {bookingResult._id}
                             </div>
                         ) : (
                             <form onSubmit={handleBooking} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', alignItems: 'end' }}>
@@ -219,10 +268,10 @@ const HospitalModal = ({ hospital, onClose }) => {
                                     />
                                 </div>
                                 <div style={{ display: 'flex', gap: '6px' }}>
-                                    <button type="submit" style={{ background: 'var(--accent-color)', color: '#000', fontWeight: 'bold', border: 'none', padding: '8px 16px' }}>
-                                        Confirm
+                                    <button type="submit" disabled={bookingLoading} style={{ background: 'var(--accent-color)', color: '#000', fontWeight: 'bold', border: 'none', padding: '8px 16px', opacity: bookingLoading ? 0.7 : 1 }}>
+                                        {bookingLoading ? 'Submitting...' : 'Confirm'}
                                     </button>
-                                    <button type="button" onClick={() => setBookingService(null)} style={{ background: 'transparent', color: '#aaa', border: '1px solid #444', padding: '8px' }}>
+                                    <button type="button" onClick={() => { setBookingService(null); setBookingError(''); setBookingResult(null); }} style={{ background: 'transparent', color: '#aaa', border: '1px solid #444', padding: '8px' }}>
                                         Cancel
                                     </button>
                                 </div>
