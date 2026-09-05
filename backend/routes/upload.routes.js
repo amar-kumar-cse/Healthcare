@@ -3,11 +3,10 @@ const router = express.Router();
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
-const mongoose = require('mongoose');
 const upload = require('../middleware/uploadMiddleware');
 const { protect, admin } = require('../middleware/authMiddleware');
-const User = require('../models/User.model');
-const Hospital = require('../models/Hospital.model');
+const supabase = require('../config/supabase');
+const { isValidUUID } = require('../utils/validators');
 
 const REPORT_PROFILES = [
     {
@@ -56,7 +55,6 @@ const buildInMemoryFileRecord = (file) => ({
 });
 
 const analyzeReport = (file) => {
-    // Read file from disk (disk storage doesn't provide buffer)
     let fileContent;
     try {
         fileContent = fs.readFileSync(file.path);
@@ -123,27 +121,27 @@ router.post('/hospital-logo', protect, admin, upload.single('logo'), async (req,
 
         const { hospitalId } = req.body;
 
-        // Validate hospitalId is provided and is a valid MongoDB ObjectId
-        if (!hospitalId || !mongoose.Types.ObjectId.isValid(hospitalId)) {
+        if (!hospitalId || !isValidUUID(hospitalId)) {
             return res.status(400).json({
                 success: false,
-                message: 'Valid hospitalId is required in request body'
+                message: 'Valid UUID hospitalId is required in request body'
             });
         }
 
         const fileRecord = buildInMemoryFileRecord(req.file);
 
-        // Update hospital logo in database
-        const hospital = await Hospital.findByIdAndUpdate(
-            hospitalId,
-            { logo: fileRecord.path },
-            { new: true }
-        );
+        // Update hospital logo in Supabase
+        const { data: hospital, error: updateError } = await supabase
+            .from('hospitals')
+            .update({ logo: fileRecord.path })
+            .eq('id', hospitalId)
+            .select()
+            .single();
 
-        if (!hospital) {
+        if (updateError || !hospital) {
             return res.status(400).json({
                 success: false,
-                message: 'Hospital not found'
+                message: 'Hospital not found or logo update failed'
             });
         }
 
@@ -158,6 +156,7 @@ router.post('/hospital-logo', protect, admin, upload.single('logo'), async (req,
             }
         });
     } catch (error) {
+        console.error('Upload logo error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Upload failed',
@@ -180,28 +179,40 @@ router.post('/hospital-image', protect, admin, upload.single('hospitalImage'), a
 
         const { hospitalId } = req.body;
 
-        // Validate hospitalId is provided and is a valid MongoDB ObjectId
-        if (!hospitalId || !mongoose.Types.ObjectId.isValid(hospitalId)) {
+        if (!hospitalId || !isValidUUID(hospitalId)) {
             return res.status(400).json({
                 success: false,
-                message: 'Valid hospitalId is required in request body'
+                message: 'Valid UUID hospitalId is required in request body'
             });
         }
 
         const fileRecord = buildInMemoryFileRecord(req.file);
 
-        // Push image to hospital images array in database
-        const hospital = await Hospital.findByIdAndUpdate(
-            hospitalId,
-            { $push: { images: fileRecord.path } },
-            { new: true }
-        );
+        // Fetch current images
+        const { data: currentHosp, error: fetchErr } = await supabase
+            .from('hospitals')
+            .select('images')
+            .eq('id', hospitalId)
+            .single();
 
-        if (!hospital) {
+        if (fetchErr || !currentHosp) {
             return res.status(400).json({
                 success: false,
                 message: 'Hospital not found'
             });
+        }
+
+        const updatedImages = Array.isArray(currentHosp.images)
+            ? [...currentHosp.images, fileRecord.path]
+            : [fileRecord.path];
+
+        const { error: updateErr } = await supabase
+            .from('hospitals')
+            .update({ images: updatedImages })
+            .eq('id', hospitalId);
+
+        if (updateErr) {
+            throw updateErr;
         }
 
         res.json({
@@ -215,6 +226,7 @@ router.post('/hospital-image', protect, admin, upload.single('hospitalImage'), a
             }
         });
     } catch (error) {
+        console.error('Upload hospital image error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Upload failed',
@@ -237,8 +249,14 @@ router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
 
         const fileRecord = buildInMemoryFileRecord(req.file);
 
-        // Update user avatar in database with an in-memory data URL so files persist with MongoDB
-        await User.findByIdAndUpdate(req.user._id, { avatar: fileRecord.path });
+        const { error: avatarErr } = await supabase
+            .from('users')
+            .update({ avatar: fileRecord.path })
+            .eq('id', req.user.id);
+
+        if (avatarErr) {
+            throw avatarErr;
+        }
 
         res.json({
             success: true,
@@ -251,6 +269,7 @@ router.post('/avatar', protect, upload.single('avatar'), async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('Upload avatar error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Upload failed',
@@ -272,19 +291,17 @@ router.post('/medical-report', protect, upload.single('medicalReport'), async (r
         }
 
         const fileRecord = buildInMemoryFileRecord(req.file);
-        
-        // Analyze report with error handling
+
         let analysis;
         try {
             analysis = analyzeReport(req.file);
         } catch (analyzeError) {
-            // Clean up uploaded file on analysis failure
             try {
                 fs.unlinkSync(req.file.path);
             } catch (deleteErr) {
                 console.error('Failed to delete file after analysis error:', deleteErr);
             }
-            
+
             return res.status(500).json({
                 success: false,
                 message: 'Failed to analyze report',
@@ -292,11 +309,21 @@ router.post('/medical-report', protect, upload.single('medicalReport'), async (r
             });
         }
 
-        // Add to user's medical reports array
-        await User.findByIdAndUpdate(
-            req.user._id,
-            { $push: { medicalReports: fileRecord.path } }
-        );
+        // Fetch current medical reports
+        const { data: currentUser } = await supabase
+            .from('users')
+            .select('medical_reports')
+            .eq('id', req.user.id)
+            .single();
+
+        const currentReports = Array.isArray(currentUser?.medical_reports)
+            ? [...currentUser.medical_reports, fileRecord.path]
+            : [fileRecord.path];
+
+        await supabase
+            .from('users')
+            .update({ medical_reports: currentReports })
+            .eq('id', req.user.id);
 
         res.json({
             success: true,
@@ -310,6 +337,7 @@ router.post('/medical-report', protect, upload.single('medicalReport'), async (r
             }
         });
     } catch (error) {
+        console.error('Upload medical report error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Upload failed',
@@ -338,6 +366,7 @@ router.post('/multiple', protect, admin, upload.array('images', 5), async (req, 
             data: fileUrls
         });
     } catch (error) {
+        console.error('Upload multiple error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Upload failed',

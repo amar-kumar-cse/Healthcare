@@ -1,6 +1,5 @@
 require('dotenv').config();
-const connectDB = require('./config/db');
-const Hospital = require('./models/Hospital.model');
+const supabase = require('./config/supabase');
 
 // Sample hospital data
 const hospitals = [
@@ -108,33 +107,78 @@ const hospitals = [
 
 const seedDatabase = async () => {
     try {
-        // Check for --force flag or SEED_CONFIRM env var
+        if (!process.env.SUPABASE_URL || (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_ANON_KEY)) {
+            console.error('❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY in .env');
+            process.exit(1);
+        }
+
         const hasForceFlag = process.argv.includes('--force');
         const hasSeedConfirm = process.env.SEED_CONFIRM === 'yes';
 
         if (!hasForceFlag && !hasSeedConfirm) {
-            console.warn('⚠️  WARNING: This will DELETE all existing hospital data!');
-            console.warn('To proceed, run with --force flag or SEED_CONFIRM=yes environment variable:');
+            console.warn('⚠️  WARNING: This will clear and re-seed hospital data in Supabase!');
+            console.warn('To proceed, run:');
             console.warn('  node seedDatabase.js --force');
-            console.warn('  SEED_CONFIRM=yes node seedDatabase.js');
             process.exit(0);
         }
 
-        await connectDB();
+        console.log('🔄 Connecting to Supabase...');
 
-        // Clear existing hospitals
-        await Hospital.deleteMany({});
-        console.log('🗑️  Cleared existing hospital data');
+        // 1. Clear existing hospitals (services cascade delete)
+        const { error: deleteError } = await supabase
+            .from('hospitals')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
 
-        // Insert sample hospitals
-        await Hospital.insertMany(hospitals);
-        console.log('✅ Successfully seeded database with sample hospitals');
+        if (deleteError) {
+            console.warn('Note on clearing hospitals:', deleteError.message);
+        } else {
+            console.log('🗑️  Cleared existing hospital data in Supabase');
+        }
 
-        console.log(`📊 Total hospitals added: ${hospitals.length}`);
+        // 2. Insert sample hospitals and their services
+        let seededCount = 0;
+        for (const item of hospitals) {
+            const { services, ...hospitalData } = item;
 
+            const { data: createdHospital, error: hospErr } = await supabase
+                .from('hospitals')
+                .insert([hospitalData])
+                .select()
+                .single();
+
+            if (hospErr) {
+                console.error(`Failed to insert hospital ${item.name}:`, hospErr.message);
+                continue;
+            }
+
+            if (services && services.length > 0) {
+                const serviceRows = services.map((s) => ({
+                    hospital_id: createdHospital.id,
+                    name: s.name,
+                    price: s.price,
+                    original_price: s.originalPrice ?? s.price,
+                    category: s.category || '',
+                    description: s.description || ''
+                }));
+
+                const { error: srvErr } = await supabase
+                    .from('services')
+                    .insert(serviceRows);
+
+                if (srvErr) {
+                    console.error(`Failed to insert services for ${item.name}:`, srvErr.message);
+                }
+            }
+
+            seededCount++;
+            console.log(`✅ Added: ${item.name} (${services.length} services)`);
+        }
+
+        console.log(`\n🎉 Total hospitals seeded in Supabase: ${seededCount}/${hospitals.length}`);
         process.exit(0);
     } catch (error) {
-        console.error('❌ Error seeding database:', error);
+        console.error('❌ Error seeding database:', error.message);
         process.exit(1);
     }
 };

@@ -2,7 +2,26 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const connectDB = require('./config/db');
+const supabase = require('./config/supabase');
+
+// Test Supabase connection on launch (non-blocking)
+(async () => {
+    try {
+        if (!process.env.SUPABASE_URL) {
+            console.warn('⚠️ SUPABASE_URL is not set in backend/.env');
+            return;
+        }
+        const { error } = await supabase.from('hospitals').select('id').limit(1);
+        if (error) {
+            console.warn('⚠️ Supabase connection warning:', error.message);
+        } else {
+            console.log('✅ Supabase connected successfully');
+        }
+    } catch (err) {
+        console.warn('⚠️ Supabase check error:', err.message);
+    }
+})();
+
 
 // Import routes
 const hospitalRoutes = require('./routes/hospitals.routes');
@@ -10,24 +29,25 @@ const authRoutes = require('./routes/auth.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const bookingRoutes = require('./routes/bookings.routes');
 
-// Connect to MongoDB (non-blocking for dev flexibility)
-connectDB();
-
 const app = express();
 
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
-// Enable CORS for frontend dev origins
+// Enable CORS for frontend dev origins & production deployments
 app.use(cors({
     origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+
+        const cleanOrigin = origin.replace(/\/+$/, '');
+
         if (
-            !origin ||
-            origin.startsWith('http://localhost') ||
-            origin.startsWith('http://127.0.0.1') ||
-            allowedOrigins.includes(origin)
+            cleanOrigin.startsWith('http://localhost') ||
+            cleanOrigin.startsWith('http://127.0.0.1') ||
+            cleanOrigin.endsWith('.vercel.app') ||
+            allowedOrigins.includes(cleanOrigin)
         ) {
             return callback(null, true);
         }
@@ -35,6 +55,7 @@ app.use(cors({
     },
     credentials: true
 }));
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

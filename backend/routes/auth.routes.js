@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
-const User = require('../models/User.model');
+const supabase = require('../config/supabase');
+const { formatUser, formatHospital } = require('../utils/supabaseAdapter');
 const { protect } = require('../middleware/authMiddleware');
+const { isValidUUID } = require('../utils/validators');
 
 const cookieOptions = {
     httpOnly: true,
@@ -14,7 +17,8 @@ const cookieOptions = {
 };
 
 const buildSafeUser = (user) => ({
-    _id: user._id,
+    _id: user.id || user._id,
+    id: user.id || user._id,
     name: user.name,
     email: user.email,
     role: user.role,
@@ -23,7 +27,7 @@ const buildSafeUser = (user) => ({
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 10,
+    max: 20,
     message: {
         success: false,
         message: 'Too many attempts, try again later'
@@ -32,7 +36,7 @@ const authLimiter = rateLimit({
 
 // Generate JWT Token
 const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
+    return jwt.sign({ id }, process.env.JWT_SECRET || 'secret-key-fallback', {
         expiresIn: '30d'
     });
 };
@@ -57,31 +61,52 @@ router.post('/register', authLimiter, [
         const { name, email, password } = req.body;
         const normalizedEmail = email.toLowerCase().trim();
 
-        // Check if user exists
-        const userExists = await User.findOne({ email: normalizedEmail });
+        // Check if user already exists
+        const { data: existingUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
 
-        if (userExists) {
+        if (existingUser) {
             return res.status(400).json({
                 success: false,
                 message: 'User already exists'
             });
         }
 
-        // Create user
-        const user = await User.create({
-            name,
-            email: normalizedEmail,
-            password
-        });
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
-        const token = generateToken(user._id);
+        // Insert new user
+        const { data: newUser, error: insertError } = await supabase
+            .from('users')
+            .insert([
+                {
+                    name,
+                    email: normalizedEmail,
+                    password: hashedPassword,
+                    role: 'user'
+                }
+            ])
+            .select()
+            .single();
+
+        if (insertError) {
+            throw insertError;
+        }
+
+        const safeUser = buildSafeUser(newUser);
+        const token = generateToken(newUser.id);
         res.cookie('medicompare_token', token, cookieOptions);
 
         res.status(201).json({
             success: true,
-            data: buildSafeUser(user)
+            data: safeUser
         });
     } catch (error) {
+        console.error('Register error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Server Error',
@@ -109,19 +134,22 @@ router.post('/login', authLimiter, [
         const { email, password } = req.body;
         const normalizedEmail = email.toLowerCase().trim();
 
-        // Check for user
-        const user = await User.findOne({ email: normalizedEmail });
+        // Find user by email
+        const { data: user, error: findError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
 
-        if (!user) {
+        if (findError || !user) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid credentials'
             });
         }
 
-        // Check password
-        const isMatch = await user.comparePassword(password);
-
+        // Compare password
+        const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
@@ -129,14 +157,16 @@ router.post('/login', authLimiter, [
             });
         }
 
-        const token = generateToken(user._id);
+        const safeUser = buildSafeUser(user);
+        const token = generateToken(user.id);
         res.cookie('medicompare_token', token, cookieOptions);
 
         res.json({
             success: true,
-            data: buildSafeUser(user)
+            data: safeUser
         });
     } catch (error) {
+        console.error('Login error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Server Error',
@@ -150,13 +180,37 @@ router.post('/login', authLimiter, [
 // @access  Private
 router.get('/profile', protect, async (req, res) => {
     try {
-        const user = await User.findById(req.user._id)
-            .select('-password')
-            .populate('favorites');
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('id, name, email, avatar, role, phone, favorites, medical_reports, is_verified, created_at, updated_at')
+            .eq('id', req.user.id)
+            .single();
+
+        if (error || !user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const formatted = formatUser(user);
+
+        // Populate favorites safely if valid UUIDs exist
+        const validFavoriteIds = (formatted.favorites || []).filter(isValidUUID);
+        if (validFavoriteIds.length > 0) {
+            const { data: favHospitals } = await supabase
+                .from('hospitals')
+                .select('*, services(*)')
+                .in('id', validFavoriteIds);
+
+            formatted.favorites = (favHospitals || []).map(formatHospital);
+        } else {
+            formatted.favorites = [];
+        }
 
         res.json({
             success: true,
-            data: user
+            data: formatted
         });
     } catch (error) {
         res.status(500).json({
@@ -172,42 +226,45 @@ router.get('/profile', protect, async (req, res) => {
 // @access  Private
 router.put('/profile', protect, async (req, res) => {
     try {
-        const user = await User.findById(req.user._id);
+        const updates = {};
+        if (req.body.name) updates.name = req.body.name;
+        if (req.body.phone !== undefined) updates.phone = req.body.phone;
+        if (req.body.avatar !== undefined) updates.avatar = req.body.avatar;
 
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        user.name = req.body.name || user.name;
-        
-        // Normalize email if provided
         if (req.body.email) {
             const normalizedEmail = req.body.email.toLowerCase().trim();
-            
-            // Check if email is being changed and if new email already exists
-            if (normalizedEmail !== user.email) {
-                const emailExists = await User.findOne({ email: normalizedEmail });
-                if (emailExists) {
+            if (normalizedEmail !== req.user.email) {
+                const { data: existing } = await supabase
+                    .from('users')
+                    .select('id')
+                    .eq('email', normalizedEmail)
+                    .maybeSingle();
+
+                if (existing) {
                     return res.status(400).json({
                         success: false,
                         message: 'Email already in use'
                     });
                 }
+                updates.email = normalizedEmail;
             }
-            
-            user.email = normalizedEmail;
         }
-        
-        user.phone = req.body.phone || user.phone;
 
         if (req.body.password) {
-            user.password = req.body.password;
+            const salt = await bcrypt.genSalt(10);
+            updates.password = await bcrypt.hash(req.body.password, salt);
         }
 
-        const updatedUser = await user.save();
+        const { data: updatedUser, error } = await supabase
+            .from('users')
+            .update(updates)
+            .eq('id', req.user.id)
+            .select()
+            .single();
+
+        if (error) {
+            throw error;
+        }
 
         res.json({
             success: true,
