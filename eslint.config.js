@@ -26,4 +26,23 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+// Backend Node.js / CommonJS files (excluding the eslint config itself)
+  {
+    files: ['backend/**/*.js'],
+    ignores: ['backend/eslint.config.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+        ...globals.commonjs,
+      },
+    },
+rules: {
+      'no-unused-vars': ['warn', {
+        varsIgnorePattern: '^[A-Z_].*|^_$|^_next$',
+        argsIgnorePattern: '^_',
+      }],
+    },
+  },
 ])

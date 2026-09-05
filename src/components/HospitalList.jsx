@@ -3,6 +3,7 @@ import { MapPin, Star, ShieldCheck, Loader, Search, ArrowUpDown, Filter } from '
 import HospitalModal from './HospitalModal';
 import { API_BASE_URL } from '../config';
 import '../App.css';
+import { normalizeHospitals } from '../utils/normalizeHospitals';
 
 // High quality fallback dataset if backend API is not running
 const MOCK_HOSPITALS = [
@@ -95,11 +96,9 @@ const HospitalList = ({ searchQuery = '' }) => {
                 const response = await fetch(`${API_BASE_URL}/api/hospitals`);
                 if (!response.ok) throw new Error('API offline');
                 const data = await response.json();
-                if (data.data && data.data.length > 0) {
-                    setHospitals(data.data);
-                } else {
-                    setHospitals(MOCK_HOSPITALS);
-                }
+                const payload = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+                const normalized = normalizeHospitals(payload);
+                setHospitals(normalized.length > 0 ? normalized : MOCK_HOSPITALS);
             } catch (err) {
                 console.warn('Backend server not detected. Loading demo hospitals dataset.', err);
                 setHospitals(MOCK_HOSPITALS);

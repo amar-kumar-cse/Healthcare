@@ -55,9 +55,10 @@ router.post('/register', authLimiter, [
 
     try {
         const { name, email, password } = req.body;
+        const normalizedEmail = email.toLowerCase().trim();
 
         // Check if user exists
-        const userExists = await User.findOne({ email });
+        const userExists = await User.findOne({ email: normalizedEmail });
 
         if (userExists) {
             return res.status(400).json({
@@ -69,7 +70,7 @@ router.post('/register', authLimiter, [
         // Create user
         const user = await User.create({
             name,
-            email,
+            email: normalizedEmail,
             password
         });
 
@@ -106,9 +107,10 @@ router.post('/login', authLimiter, [
 
     try {
         const { email, password } = req.body;
+        const normalizedEmail = email.toLowerCase().trim();
 
         // Check for user
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: normalizedEmail });
 
         if (!user) {
             return res.status(401).json({
@@ -180,7 +182,25 @@ router.put('/profile', protect, async (req, res) => {
         }
 
         user.name = req.body.name || user.name;
-        user.email = req.body.email || user.email;
+        
+        // Normalize email if provided
+        if (req.body.email) {
+            const normalizedEmail = req.body.email.toLowerCase().trim();
+            
+            // Check if email is being changed and if new email already exists
+            if (normalizedEmail !== user.email) {
+                const emailExists = await User.findOne({ email: normalizedEmail });
+                if (emailExists) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Email already in use'
+                    });
+                }
+            }
+            
+            user.email = normalizedEmail;
+        }
+        
         user.phone = req.body.phone || user.phone;
 
         if (req.body.password) {

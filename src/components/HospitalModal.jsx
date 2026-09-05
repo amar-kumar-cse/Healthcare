@@ -10,7 +10,7 @@ const HospitalModal = ({ hospital, onClose }) => {
         try {
             const savedUser = localStorage.getItem('medicompare_user');
             return savedUser ? (JSON.parse(savedUser).name || '') : '';
-        } catch (error) {
+        } catch {
             return '';
         }
     });

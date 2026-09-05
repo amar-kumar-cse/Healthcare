@@ -1,27 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Activity, Menu, X, UserCheck, LogOut } from 'lucide-react';
 import AuthModal from './AuthModal';
 import '../App.css';
 
-const Navbar = () => {
+const Navbar = ({ onAuthSuccess }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [isAuthOpen, setIsAuthOpen] = useState(false);
-    const [user, setUser] = useState(null);
-
-    useEffect(() => {
+    const [user, setUser] = useState(() => {
         const savedUser = localStorage.getItem('medicompare_user');
         if (savedUser) {
             try {
-                setUser(JSON.parse(savedUser));
+                return JSON.parse(savedUser);
             } catch (err) {
                 console.error(err);
             }
         }
-    }, []);
+        return null;
+    });
 
     const handleLogout = () => {
         localStorage.removeItem('medicompare_user');
         setUser(null);
+    };
+
+    const handleAuthSuccess = (userData) => {
+        setUser(userData);
+        localStorage.setItem('medicompare_user', JSON.stringify(userData));
+        if (onAuthSuccess) {
+            onAuthSuccess(userData);
+        }
     };
 
     return (
@@ -63,8 +70,8 @@ const Navbar = () => {
                             fontWeight: '500',
                             transition: 'color 0.3s'
                         }}
-                            onMouseEnter={(e) => e.target.style.color = 'var(--primary-color)'}
-                            onMouseLeave={(e) => e.target.style.color = 'rgba(255,255,255,0.85)'}
+                            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
                         >
                             {item}
                         </a>
@@ -84,7 +91,7 @@ const Navbar = () => {
                                 color: '#fff'
                             }}>
                                 <UserCheck size={16} color="var(--primary-color)" />
-                                <span>{user.name}</span>
+                                <span>{user.name || 'User'}</span>
                             </div>
                             <button
                                 onClick={handleLogout}
@@ -190,7 +197,7 @@ const Navbar = () => {
             <AuthModal
                 isOpen={isAuthOpen}
                 onClose={() => setIsAuthOpen(false)}
-                onAuthSuccess={(userData) => setUser(userData)}
+                onAuthSuccess={handleAuthSuccess}
             />
         </>
     );

@@ -3,10 +3,10 @@ import { Upload, X, FileText, CheckCircle, AlertCircle, Sparkles, ArrowRight, Sh
 import { API_BASE_URL } from '../config';
 import '../App.css';
 
-const ImageUpload = ({ onFindHospital }) => {
+const ImageUpload = ({ onFindHospital, isLoggedIn, onOpenAuthModal }) => {
     const [file, setFile] = useState(null);
     const [dragging, setDragging] = useState(false);
-    const [uploadStatus, setUploadStatus] = useState(null); // 'uploading', 'scanning', 'success', 'error'
+    const [uploadStatus, setUploadStatus] = useState(null); // 'uploading', 'scanning', 'success', 'error', 'login_required'
     const [message, setMessage] = useState('');
     const [aiResult, setAiResult] = useState(null);
 
@@ -63,6 +63,13 @@ const ImageUpload = ({ onFindHospital }) => {
             });
 
             const data = await response.json();
+
+            // Handle 401 (unauthorized) - user needs to login
+            if (response.status === 401) {
+                setUploadStatus('login_required');
+                setMessage('Please sign in to analyze a report');
+                return;
+            }
 
             if (!response.ok || !data.success) {
                 throw new Error(data.message || 'Upload failed');
@@ -201,6 +208,35 @@ const ImageUpload = ({ onFindHospital }) => {
                         {uploadStatus === 'error' && (
                             <div style={{ color: '#ff4444', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                                 <AlertCircle size={20} /> {message}
+                            </div>
+                        )}
+
+                        {uploadStatus === 'login_required' && (
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ color: '#ff9944', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '1rem' }}>
+                                    <AlertCircle size={20} /> {message}
+                                </div>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (onOpenAuthModal) {
+                                            onOpenAuthModal();
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'var(--primary-color)',
+                                        color: '#000',
+                                        border: 'none',
+                                        padding: '0.8rem 2rem',
+                                        fontSize: '0.95rem',
+                                        fontWeight: 'bold',
+                                        borderRadius: '30px',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 0 20px var(--primary-glow)'
+                                    }}
+                                >
+                                    Sign In
+                                </button>
                             </div>
                         )}
 

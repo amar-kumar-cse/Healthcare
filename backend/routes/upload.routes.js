@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
+const mongoose = require('mongoose');
 const upload = require('../middleware/uploadMiddleware');
 const { protect, admin } = require('../middleware/authMiddleware');
 const User = require('../models/User.model');
@@ -47,15 +49,23 @@ const REPORT_PROFILES = [
 ];
 
 const buildInMemoryFileRecord = (file) => ({
-    filename: `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`,
-    path: `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+    filename: file.filename,
+    path: `/uploads/${file.fieldname === 'avatar' ? 'avatars' : file.fieldname === 'medicalReport' ? 'medicalReports' : file.fieldname === 'logo' ? 'hospitalLogo' : 'hospitalImages'}/${file.filename}`,
     size: file.size,
     mimeType: file.mimetype
 });
 
 const analyzeReport = (file) => {
-    const searchable = `${file.originalname} ${file.mimetype} ${file.buffer.toString('latin1')}`.toLowerCase();
-    const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    // Read file from disk (disk storage doesn't provide buffer)
+    let fileContent;
+    try {
+        fileContent = fs.readFileSync(file.path);
+    } catch (err) {
+        throw new Error(`Failed to read uploaded file: ${err.message}`);
+    }
+
+    const searchable = `${file.originalname} ${file.mimetype} ${fileContent.toString('latin1')}`.toLowerCase();
+    const hash = crypto.createHash('sha256').update(fileContent).digest('hex');
 
     let bestProfile = null;
     let bestScore = -1;
@@ -111,7 +121,31 @@ router.post('/hospital-logo', protect, admin, upload.single('logo'), async (req,
             });
         }
 
+        const { hospitalId } = req.body;
+
+        // Validate hospitalId is provided and is a valid MongoDB ObjectId
+        if (!hospitalId || !mongoose.Types.ObjectId.isValid(hospitalId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid hospitalId is required in request body'
+            });
+        }
+
         const fileRecord = buildInMemoryFileRecord(req.file);
+
+        // Update hospital logo in database
+        const hospital = await Hospital.findByIdAndUpdate(
+            hospitalId,
+            { logo: fileRecord.path },
+            { new: true }
+        );
+
+        if (!hospital) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hospital not found'
+            });
+        }
 
         res.json({
             success: true,
@@ -144,7 +178,31 @@ router.post('/hospital-image', protect, admin, upload.single('hospitalImage'), a
             });
         }
 
+        const { hospitalId } = req.body;
+
+        // Validate hospitalId is provided and is a valid MongoDB ObjectId
+        if (!hospitalId || !mongoose.Types.ObjectId.isValid(hospitalId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid hospitalId is required in request body'
+            });
+        }
+
         const fileRecord = buildInMemoryFileRecord(req.file);
+
+        // Push image to hospital images array in database
+        const hospital = await Hospital.findByIdAndUpdate(
+            hospitalId,
+            { $push: { images: fileRecord.path } },
+            { new: true }
+        );
+
+        if (!hospital) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hospital not found'
+            });
+        }
 
         res.json({
             success: true,
@@ -214,9 +272,27 @@ router.post('/medical-report', protect, upload.single('medicalReport'), async (r
         }
 
         const fileRecord = buildInMemoryFileRecord(req.file);
-        const analysis = analyzeReport(req.file);
+        
+        // Analyze report with error handling
+        let analysis;
+        try {
+            analysis = analyzeReport(req.file);
+        } catch (analyzeError) {
+            // Clean up uploaded file on analysis failure
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (deleteErr) {
+                console.error('Failed to delete file after analysis error:', deleteErr);
+            }
+            
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to analyze report',
+                error: analyzeError.message
+            });
+        }
 
-        // Add to user's medical reports array as a durable data URL stored in MongoDB
+        // Add to user's medical reports array
         await User.findByIdAndUpdate(
             req.user._id,
             { $push: { medicalReports: fileRecord.path } }

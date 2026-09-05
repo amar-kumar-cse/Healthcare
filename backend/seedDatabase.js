@@ -1,5 +1,4 @@
 require('dotenv').config();
-const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const Hospital = require('./models/Hospital.model');
 
@@ -109,6 +108,18 @@ const hospitals = [
 
 const seedDatabase = async () => {
     try {
+        // Check for --force flag or SEED_CONFIRM env var
+        const hasForceFlag = process.argv.includes('--force');
+        const hasSeedConfirm = process.env.SEED_CONFIRM === 'yes';
+
+        if (!hasForceFlag && !hasSeedConfirm) {
+            console.warn('⚠️  WARNING: This will DELETE all existing hospital data!');
+            console.warn('To proceed, run with --force flag or SEED_CONFIRM=yes environment variable:');
+            console.warn('  node seedDatabase.js --force');
+            console.warn('  SEED_CONFIRM=yes node seedDatabase.js');
+            process.exit(0);
+        }
+
         await connectDB();
 
         // Clear existing hospitals
