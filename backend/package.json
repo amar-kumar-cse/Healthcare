@@ -6,9 +6,11 @@
     "scripts": {
         "start": "node server.js",
         "dev": "nodemon server.js",
+        "build": "echo 'Backend ready'",
         "seed": "node seedDatabase.js --force",
         "migrate:mongo": "node migrateMongoToSupabase.js"
     },
+
     "keywords": [
         "healthcare",
         "api",
